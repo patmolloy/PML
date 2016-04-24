@@ -1,0 +1,125 @@
+---
+title: "Coursera PML - Week 4 Assignment"
+author: "Pat Molloy"
+date: "23 April 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## Practical Machine Learning: Week 4 Assignment: Quantified Self Movement Data
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+In this project, thegoal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways (A,B,C,D,E - the classe variable)
+
+> The goal is to build a model to predict the manner in which they did the exercise.
+
+# Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r prelims, include=FALSE, cache=FALSE}
+library (caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+```
+
+# Load the data
+
+```{r}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="internal")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="internal")
+}
+```
+
+# Read the data
+
+We can read the data (training and test) into two data frames
+
+```{r}
+trainRaw <- read.csv("./data/pml-training.csv",na.strings = c("NA", ""),strip.white=T)
+testRaw <- read.csv("./data/pml-testing.csv",na.strings = c("NA", ""),strip.white=T)
+dim(trainRaw)
+dim(testRaw)
+```
+
+We end up with 160 columns of data (variables). With 19,622 observations in the taining set and 20 in the test set.
+
+# Data Cleaning
+
+Keep only variables where there are no NA's ; additionally remove irrelevant varibles (e.g. demographic stuf)
+
+```{r}
+isNA <- apply(trainRaw, 2, function(x) { sum(is.na(x)) })
+validData <- subset(trainRaw[, which(isNA == 0)], 
+                    select=-c(X, user_name, new_window, num_window, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp))
+dim(validData)
+
+```
+So, we are now down to 53 columns (variables). Let's partition (70% / 30%) into training and test sets
+
+```{r Partition 70/30}
+set.seed(12345) # ensure this can be repoduced
+inTrain <- createDataPartition(validData$classe, p=0.70, list=F)
+training <- validData[inTrain,]
+testing <- validData[-inTrain,]
+```
+
+# Data Modeling using Random Forest
+
+Now we'll train a Random Forest model on the training set. (Using this particular combination of trControl parameters is important, as by default bootstrapping is used, which can be time consuming). Use 4-fold cross validation.
+
+```{r Model}
+ctrl <- trainControl(allowParallel=T, method="cv", number=4)
+model <- train(classe ~ ., data=training, model="rf", trControl=ctrl)
+pred <- predict(model, newdata=testing)
+
+sum(pred == testing$classe) / length(pred)
+
+confusionMatrix(testing$classe, pred)
+```
+
+
+We can see that the estimated accuracy of the model is 99.18% and that the estimated out-of-sample error is therefore 0.82%
+
+# Predicting for the Test Data Set (20 Observations)
+
+```{r Predict}
+
+validTest <- subset(testRaw[, which(isNA == 0)], 
+                        select=-c(X, user_name, new_window, num_window, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp))
+predict(model, newdata=validTest)
+```
+
+# Appendix 
+
+Correlation Matrix Visualisation and Most Important Variables
+
+```{r Appendix}
+
+library(corrplot)
+corrPlot <- cor(training[,-length(names(training))])
+corrplot(corrPlot, method="color")
+
+varImp(model)
+```
